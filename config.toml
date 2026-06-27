@@ -1,0 +1,36 @@
+# Project-level configuration. .env holds secrets; this holds shape/defaults.
+
+[project]
+name = "xhs-supervisor"
+version = "0.1.0"
+description = "Xiaohongshu low-price product promotion auto-operation system (Supervisor multi-agent)"
+
+[selection]
+price_min = 19.9
+price_max = 69.9
+commission_rate_min = 0.20   # > 20%
+sales_30d_min = 5000
+top_k = 5
+
+[visual]
+backend = "rmbg"             # rmbg | comfyui
+big_text_font_size = 96
+big_text_color = "#FFFFFF"
+big_text_stroke_color = "#000000"
+
+[copywriter]
+max_chars = 250
+temperature = 0.9
+
+[rpa]
+min_delay = 1.5
+max_delay = 4.5
+headless = false
+human_like_scroll = true
+
+[supervisor]
+pipeline = ["select", "visual", "copy", "publish"]
+
+[context]
+max_chars = 12000
+max_messages = 20

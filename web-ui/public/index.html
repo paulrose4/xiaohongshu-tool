@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书带货系统监控台</title>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.0.0/umd/react.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.0.0/umd/react-dom.development.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, createContext, useContext } = React;
+        const API_BASE = "http://localhost:8000/api";
+
+        const AppContext = createContext();
+
+        const AppProvider = ({ children }) => {
+            const [logs, setLogs] = useState([]);
+            const [currentTask, setCurrentTask] = useState(null);
+            const [config, setConfig] = useState({});
+            return (
+                <AppContext.Provider value={{ logs, setLogs, currentTask, setCurrentTask, config, setConfig }}>
+                    {children}
+                </AppContext.Provider>
+            );
+        };
+
+        const ControlPanel = () => {
+            const { setLogs, setCurrentTask } = useContext(AppContext);
+            const [instruction, setInstruction] = useState("测试选品");
+            const [running, setRunning] = useState(false);
+
+            const startPipeline = async () => {
+                setRunning(true);
+                setLogs([]);
+                setCurrentTask({ instruction, status: "running", progress: 0 });
+
+                try {
+                    const res = await fetch(`${API_BASE}/start`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ instruction })
+                    });
+                    const data = await res.json();
+                    const taskId = data.task_id;
+
+                    // Poll logs
+                    const poll = setInterval(async () => {
+                        try {
+                            const sr = await fetch(`${API_BASE}/status`);
+                            const status = await sr.json();
+                            const taskLogs = status.logs[String(taskId)] || [];
+                            if (taskLogs.length > 0) setLogs(taskLogs);
+                            if (status.tasks[String(taskId)]?.status === "done") {
+                                clearInterval(poll);
+                                setCurrentTask(prev => ({ ...prev, status: "done", progress: 100 }));
+                                setRunning(false);
+                            }
+                        } catch (e) { /* keep polling */ }
+                    }, 1000);
+                } catch (err) {
+                    setLogs(prev => [...prev, `[ERROR] 连接后端失败: ${err.message}`]);
+                    setRunning(false);
+                }
+            };
+
+            return (
+                <div className="bg-white p-6 rounded shadow">
+                    <h2 className="text-xl font-semibold mb-4">控制面板</h2>
+                    <input
+                        type="text"
+                        value={instruction}
+                        onChange={e => setInstruction(e.target.value)}
+                        className="border p-2 w-full mb-3 rounded"
+                        placeholder="输入选品指令..."
+                    />
+                    <button
+                        onClick={startPipeline}
+                        disabled={running}
+                        className={`px-6 py-2 rounded font-semibold text-white ${running ? "bg-gray-400" : "bg-blue-500 hover:bg-blue-600"}`}
+                    >
+                        {running ? "运行中..." : "启动流水线"}
+                    </button>
+                </div>
+            );
+        };
+
+        const LogViewer = () => {
+            const { logs } = useContext(AppContext);
+            return (
+                <div className="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm h-64 overflow-y-auto">
+                    {logs.length === 0 && <div className="text-gray-500">等待启动...</div>}
+                    {logs.map((log, i) => (
+                        <div key={i} className={`mb-1 ${log.includes("ERROR") ? "text-red-400" : log.includes("WARNING") ? "text-yellow-400" : ""}`}>
+                            {log}
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const TaskStatus = () => {
+            const { currentTask } = useContext(AppContext);
+            if (!currentTask) return <div className="bg-white p-6 rounded shadow mt-4"><h2 className="text-xl font-semibold mb-4">任务状态</h2><div>就绪</div></div>;
+            return (
+                <div className="bg-white p-6 rounded shadow mt-4">
+                    <h2 className="text-xl font-semibold mb-4">任务状态</h2>
+                    <div>指令: {currentTask.instruction}</div>
+                    <div>状态: {currentTask.status}</div>
+                    <div>进度: {currentTask.progress}%</div>
+                </div>
+            );
+        };
+
+        const App = () => (
+            <div className="min-h-screen bg-gray-100">
+                <header className="bg-blue-600 text-white p-4">
+                    <h1 className="text-2xl font-bold">小红书带货系统监控台</h1>
+                </header>
+                <main className="container mx-auto p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <ControlPanel />
+                        <div className="bg-white p-6 rounded shadow">
+                            <h2 className="text-xl font-semibold mb-4">实时日志</h2>
+                            <LogViewer />
+                        </div>
+                    </div>
+                    <TaskStatus />
+                </main>
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<AppProvider><App /></AppProvider>);
+    </script>
+</body>
+</html>
